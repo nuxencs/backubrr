@@ -7,6 +7,7 @@ import (
 	"backubrr/notifications"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -36,6 +37,31 @@ func init() {
 
 func PrintVersion() {
 	fmt.Printf("backubrr v%s %s %s\n", version, commit[:7], date)
+}
+
+func stringInSlice(s string, slice []string) bool {
+	for _, item := range slice {
+		if item == s {
+			return true
+		}
+	}
+	return false
+}
+
+func listBackupFiles(backupDir string) ([]string, error) {
+	files, err := ioutil.ReadDir(backupDir)
+	if err != nil {
+		return nil, err
+	}
+
+	var fileNames []string
+	for _, file := range files {
+		if file.Mode().IsRegular() {
+			fileNames = append(fileNames, file.Name())
+		}
+	}
+
+	return fileNames, nil
 }
 
 func main() {
@@ -75,24 +101,48 @@ func main() {
 	for {
 		// Create backup for each source directory
 		for _, sourceDir := range config.SourceDirs {
-			var archiveName string
-			if config.EncryptionKey != "" || passphrase != "" {
-				archiveName = fmt.Sprintf("%s_%s.tar.gz.enc", filepath.Base(sourceDir), time.Now().Format("2006-01-02_15-04-05"))
-			} else {
-				archiveName = fmt.Sprintf("%s_%s.tar.gz", filepath.Base(sourceDir), time.Now().Format("2006-01-02_15-04-05"))
+
+			backupDir := filepath.Join(config.OutputDir, filepath.Base(sourceDir))
+
+			// List existing backup files before creating a new backup
+			existingBackupFiles, err := listBackupFiles(backupDir)
+			if err != nil {
+				log.Printf("Error listing backup files in %s: %s\n", backupDir, err)
+				continue
 			}
-			err := backup.CreateBackup(config, sourceDir, passphrase)
+
+			err = backup.CreateBackup(config, sourceDir, passphrase)
 			if err != nil {
 				log.Printf("Error creating backup of %s: %s\n", sourceDir, err)
 				continue
 			}
 
-			backupDir := filepath.Join(config.OutputDir, filepath.Base(sourceDir))
+			// List backup files after creating a new backup
+			newBackupFiles, err := listBackupFiles(backupDir)
+			if err != nil {
+				log.Printf("Error listing backup files in %s: %s\n", backupDir, err)
+				continue
+			}
+
+			// Find newly created backup file
+			var newBackupFile string
+			for _, file := range newBackupFiles {
+				if !stringInSlice(file, existingBackupFiles) {
+					newBackupFile = file
+					break
+				}
+			}
+
+			if newBackupFile == "" {
+				log.Printf("No new backup file found in %s\n", backupDir)
+				continue
+			}
+
 			var backupMessage string
 			if config.EncryptionKey != "" || passphrase != "" {
-				backupMessage = fmt.Sprintf("Backup of **`%s`** created successfully! Encrypted archive saved to **`%s`**\n", sourceDir, filepath.Join(backupDir, archiveName))
+				backupMessage = fmt.Sprintf("Backup of **`%s`** created successfully! Encrypted archive saved to **`%s`**\n", sourceDir, filepath.Join(backupDir, newBackupFile))
 			} else {
-				backupMessage = fmt.Sprintf("Backup of **`%s`** created successfully! Archive saved to **`%s`**\n", sourceDir, filepath.Join(backupDir, archiveName))
+				backupMessage = fmt.Sprintf("Backup of **`%s`** created successfully! Archive saved to **`%s`**\n", sourceDir, filepath.Join(backupDir, newBackupFile))
 			}
 			backupMessage = strings.Replace(backupMessage, os.Getenv("HOME"), "~", -1)
 			backupMessages = append(backupMessages, backupMessage)
