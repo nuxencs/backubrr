@@ -45,8 +45,9 @@ func Cleaner(configFilePath string) error {
 			return err
 		}
 
-		// Only consider regular files with .tar.gz extension
-		if !info.Mode().IsRegular() || filepath.Ext(path) != ".tar.gz" {
+		// Only consider regular files with .tar.gz or .tar.gz.gpg extension
+		ext := filepath.Ext(path)
+		if !info.Mode().IsRegular() || (ext != ".tar.gz" && ext != ".tar.gz.gpg") {
 			return nil
 		}
 
