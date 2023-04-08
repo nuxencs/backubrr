@@ -1,98 +1,57 @@
 package cleaner
 
 import (
-	"fmt"
+	"backubrr/config"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"time"
-
-	"github.com/spf13/viper"
 )
 
-func Cleaner(configFilePath string) error {
-	// Load configuration from file
-	viper.SetConfigFile(configFilePath)
-	if err := viper.ReadInConfig(); err != nil {
+func Cleaner(configPath string) error {
+	config, err := config.LoadConfig(configPath)
+	if err != nil {
 		return err
 	}
 
-	// Get output directory from configuration file
-	outputDir := viper.GetString("output_dir")
-	if outputDir == "" {
-		return fmt.Errorf("output_dir not set in configuration file")
-	}
+	cutoff := time.Now().AddDate(0, 0, -config.RetentionDays)
+	log.Printf("Cutoff time: %s", cutoff)
 
-	// Check if output directory exists
-	if _, err := os.Stat(outputDir); os.IsNotExist(err) {
-		return fmt.Errorf("output_dir does not exist: %s", outputDir)
-	}
+	oldBackups := 0
 
-	// Get retention days from configuration file
-	retentionDays := viper.GetInt("retention_days")
-	if retentionDays == 0 {
-		retentionDays = 7 // default retention period is 7 days
-	}
+	for _, sourceDir := range config.SourceDirs {
+		backupDir := filepath.Join(config.OutputDir, filepath.Base(sourceDir))
+		log.Printf("Processing backup directory: %s", backupDir) // Added log message
 
-	// Calculate cutoff time based on retention period
-	cutoffTime := time.Now().Add(-time.Duration(retentionDays) * 24 * time.Hour)
-	deletedBackups := false
-
-	// Walk through output directory and subdirectories
-	err := filepath.Walk(outputDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// Only consider regular files with .tar.gz or .tar.gz.gpg extension
-		ext := filepath.Ext(path)
-		if !info.Mode().IsRegular() || (ext != ".tar.gz" && ext != ".tar.gz.gpg") {
-			return nil
-		}
-
-		// Check if file is older than retention period
-		if info.ModTime().Before(cutoffTime) {
-			if err := os.Remove(path); err != nil {
+		err := filepath.Walk(backupDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
 				return err
 			}
-			deletedBackups = true
-		}
 
-		return nil
-	})
+			if info.IsDir() {
+				return nil
+			}
 
-	if err != nil {
-		return err
-	}
+			if info.ModTime().Before(cutoff) {
+				oldBackups++
+				log.Printf("File %s is older than retention period. Deleting...", path)
+				if err := os.Remove(path); err != nil {
+					return err
+				}
+			} else {
+				log.Printf("File %s is within retention period. Skipping...", path)
+			}
 
-	// Walk through output directory and subdirectories again to delete empty directories
-	err = filepath.Walk(outputDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// Only consider directories that are empty
-		if !info.IsDir() || !isEmptyDir(path) {
 			return nil
-		}
-
-		if err := os.Remove(path); err != nil {
+		})
+		if err != nil {
+			log.Printf("Error walking the path %q: %v\n", backupDir, err) // Added log message
 			return err
 		}
-
-		return nil
-	})
-
-	if err != nil {
-		return err
 	}
 
-	log.SetFlags(0)
-
-	if deletedBackups {
-		log.Printf("Old backups deleted successfully.")
-	} else {
+	if oldBackups == 0 {
 		log.Printf("No old backups found. Cleanup not needed.")
 	}
 

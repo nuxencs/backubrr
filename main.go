@@ -93,9 +93,12 @@ func main() {
 	}
 
 	// Create destination directory if it doesn't exist
-	err = os.MkdirAll(config.OutputDir, 0755)
-	if err != nil {
-		log.Fatal(err)
+	for _, sourceDir := range config.SourceDirs {
+		backupDir := filepath.Join(config.OutputDir, filepath.Base(sourceDir))
+		err = os.MkdirAll(backupDir, 0755)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	for {
