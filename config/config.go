@@ -1,10 +1,9 @@
 package config
 
 import (
-	"errors"
 	"os"
 
-	"github.com/fatih/color"
+	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v2"
 )
 
@@ -32,9 +31,16 @@ func LoadConfig(filePath string) (*Config, error) {
 		return nil, err
 	}
 
+	// Check retention is positive
+	if config.RetentionDays < 0 {
+		log.Error().Msg("retention_days must be a positive number, check your config file")
+		os.Exit(1)
+	}
+
 	// Check interval is positive
 	if config.Interval < 0 {
-		return nil, errors.New(color.HiRedString("error: Interval must be a positive number"))
+		log.Error().Msg("interval must be a positive number, check your config file")
+		os.Exit(1)
 	}
 
 	return config, nil

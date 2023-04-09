@@ -8,13 +8,13 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/fatih/color"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 var (
@@ -65,7 +65,10 @@ func listBackupFiles(backupDir string) ([]string, error) {
 }
 
 func main() {
-	// Parse command-line arguments
+	output := zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339, NoColor: false}
+	log.Logger = log.Output(output).With().Logger()
+	zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 	flag.Usage = config.PrintHelp
 	var configFilePath string
 	var backupMessages []string
@@ -82,13 +85,12 @@ func main() {
 	// Load configuration from file
 	config, err := config.LoadConfig(configFilePath)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal().Err(err).Msg("Error loading config file, check if the file exists and is valid")
 	}
 
 	// Check if encryption key is set correctly
 	if config.EncryptionKey != "" && passphrase != "" {
-		errorMessage := "Encryption key is already set in config. Please remove the --passphrase argument or unset the encryption key in the config file."
-		color.HiRed(errorMessage)
+		log.Error().Msg("Encryption key is already set in config. Please remove the --passphrase argument or unset the encryption key in the config file.")
 		os.Exit(1)
 	}
 
@@ -97,7 +99,7 @@ func main() {
 		backupDir := filepath.Join(config.OutputDir, filepath.Base(sourceDir))
 		err = os.MkdirAll(backupDir, 0755)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal().Err(err).Msgf("Error creating backup directory %s", backupDir)
 		}
 	}
 
@@ -110,20 +112,20 @@ func main() {
 			// List existing backup files before creating a new backup
 			existingBackupFiles, err := listBackupFiles(backupDir)
 			if err != nil {
-				log.Printf("Error listing backup files in %s: %s\n", backupDir, err)
+				log.Error().Msgf("Error listing backup files in %s: %s\n", backupDir, err)
 				continue
 			}
 
 			err = backup.CreateBackup(config, sourceDir, passphrase)
 			if err != nil {
-				log.Printf("Error creating backup of %s: %s\n", sourceDir, err)
+				log.Error().Msgf("Error creating backup of %s: %s\n", sourceDir, err)
 				continue
 			}
 
 			// List backup files after creating a new backup
 			newBackupFiles, err := listBackupFiles(backupDir)
 			if err != nil {
-				log.Printf("Error listing backup files in %s: %s\n", backupDir, err)
+				log.Error().Msgf("Error listing backup files in %s: %s\n", backupDir, err)
 				continue
 			}
 
@@ -137,7 +139,7 @@ func main() {
 			}
 
 			if newBackupFile == "" {
-				log.Printf("No new backup file found in %s\n", backupDir)
+				log.Debug().Msgf("No new backup file found in %s\n", backupDir)
 				continue
 			}
 
@@ -173,13 +175,13 @@ func main() {
 		// Send combined message to Discord
 		if config.DiscordWebhookURL != "" {
 			if err := notifications.SendToDiscordWebhook(config.DiscordWebhookURL, []string{combinedMessage}); err != nil {
-				fmt.Println("Error sending message to Discord:", err)
+				log.Error().Msgf("Error sending message to Discord:", err)
 			}
 		}
 
 		// Clean up old backups
 		if err := cleaner.Cleaner(configFilePath); err != nil {
-			fmt.Println("Error cleaning up old backups:", err)
+			log.Error().Msgf("Error cleaning up old backups:", err)
 		}
 
 		// Sleep until the next backup time, if configured
@@ -188,7 +190,7 @@ func main() {
 				duration := time.Duration(config.Interval) * time.Hour
 				nextBackupTime = time.Now().Add(duration)
 			}
-			color.Cyan("\nNext backup will run at %s\n", nextBackupTime.Format("2006-01-02 15:04:05"))
+			log.Info().Msgf("Next backup will run at %s\n", nextBackupTime.Format("2006-01-02 15:04:05"))
 			time.Sleep(time.Until(nextBackupTime))
 		} else {
 			break

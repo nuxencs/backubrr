@@ -4,7 +4,6 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -14,7 +13,7 @@ import (
 	"backubrr/config"
 
 	"github.com/briandowns/spinner"
-	"github.com/fatih/color"
+	"github.com/rs/zerolog/log"
 )
 
 func CreateBackup(config *config.Config, sourceDir string, passphrase string) error {
@@ -25,14 +24,12 @@ func CreateBackup(config *config.Config, sourceDir string, passphrase string) er
 		encryptionKey = passphrase
 	}
 
-	//fmt.Println("Encryption key:", encryptionKey)
-
 	// Print source directory being backed up
-	color.Blue("Backing up %s...\n", sourceDir)
+	log.Info().Str("sourceDir", sourceDir).Msg("Backing up")
 
 	// Define archive name
 	sourceDirBase := filepath.Base(sourceDir)
-	archiveName := fmt.Sprintf("%s_%s.tar.gz", sourceDirBase, time.Now().Format("2006-01-02_15-04-05"))
+	archiveName := sourceDirBase + "_" + time.Now().Format("2006-01-02_15-04-05") + ".tar.gz"
 
 	// Update the output directory to include the source directory name
 	outputDir := filepath.Join(config.OutputDir, sourceDirBase)
@@ -105,29 +102,29 @@ func CreateBackup(config *config.Config, sourceDir string, passphrase string) er
 
 	// Encrypt archive using GPG, if encryption key is set
 	if encryptionKey != "" {
-		encryptedArchiveName := fmt.Sprintf("%s.gpg", archiveName)
+		encryptedArchiveName := archiveName + ".gpg"
 		cmd := exec.Command("gpg", "--batch", "--symmetric", "--cipher-algo", "AES256", "--passphrase", encryptionKey, "--output", filepath.Join(outputDir, encryptedArchiveName), filepath.Join(outputDir, archiveName))
 
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
 		if err := cmd.Run(); err != nil {
-			fmt.Println("Error running GPG command:", err)
-			fmt.Println("GPG output:", stderr.String())
+			log.Error().Err(err).Msg("Error running GPG command")
+			log.Error().Str("GPG output", stderr.String()).Msg("")
 			return err
 		}
 
 		// Remove unencrypted backup file
 		if err := os.Remove(filepath.Join(outputDir, archiveName)); err != nil {
-			fmt.Println("Error removing unencrypted backup file:", err)
+			log.Error().Err(err).Msg("Error removing unencrypted backup file")
 		}
 
 		// Print success message for encrypted backup
-		message := fmt.Sprintf("Backup created successfully! Encrypted archive saved to %s\n\n", filepath.Join(config.OutputDir, sourceDirBase, encryptedArchiveName))
-		color.Green(message)
+		message := "Backup created successfully! Encrypted archive saved to " + filepath.Join(config.OutputDir, sourceDirBase, encryptedArchiveName) + "\n\n"
+		log.Info().Str("message", message).Msg("")
 	} else {
 		// Print success message for unencrypted backup
-		message := fmt.Sprintf("Backup created successfully! Archive saved to %s\n\n", filepath.Join(config.OutputDir, sourceDirBase, archiveName))
-		color.Green(message)
+		message := "Backup created successfully! Archive saved to " + filepath.Join(config.OutputDir, sourceDirBase, archiveName) + "\n\n"
+		log.Info().Str("message", message).Msg("")
 	}
 
 	return nil
