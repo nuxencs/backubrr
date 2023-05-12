@@ -179,6 +179,9 @@ func main() {
 			}
 		}
 
+		// Clear backupMessages slice
+		backupMessages = []string{}
+
 		// Clean up old backups
 		if err := cleaner.Cleaner(configFilePath); err != nil {
 			log.Error().Msgf("Error cleaning up old backups:", err)
